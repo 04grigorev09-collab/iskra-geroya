@@ -280,7 +280,7 @@ const biomeName=ch=>biome(ch).name+(ch>BIOMES.length?' '+(Math.floor((ch-1)/BIOM
 const tier=(ch,ring)=>(ch-1)*4+ring;
 const enemyHP=t=>24*Math.pow(1.5,t-1);
 const enemyDmg=t=>5*Math.pow(1.48,t-1);
-const BAL={lootB:3,lootG:1.74,ramp:.8,rampMax:16,costG:1.2,xpB:20,xpG:1.28,lvlB:.02};
+const BAL={lootB:3,lootG:1.74,ramp:.8,rampMax:16,costG:1.2,xpB:40,xpG:1.28,lvlB:.02}; /* круг 21: xpB 20→40 — уровни героя вдвое медленнее (ур.1→6 ≈1,4 мин вместо 0,6 на АВТО) */
 const lootVal=t=>BAL.lootB*Math.pow(BAL.lootG,t-1);
 const xpVal=t=>4*Math.pow(1.5,t-1);
 const xpNeed=L=>Math.floor(BAL.xpB*Math.pow(BAL.xpG,L-1));
@@ -678,10 +678,10 @@ function update(dt){time+=dt;S.stats.play+=dt;BF.cool-=dt;if(BF.active)BF.t+=dt;
   let vx=m.x*ST.speed,vy=m.y*ST.speed;if(P.dashT>0){P.dashT-=dt;vx=P.dashDir.x*ST.speed*3.3;vy=P.dashDir.y*ST.speed*3.3;if(Math.random()<.7)parts.push({x:P.x,y:P.y,vx:0,vy:0,life:.25,max:.3,r:9,col:'#ff9ab8'})}
   P.moving=(m.x||m.y)?1:0;if(P.moving&&!P.swing)P.face=Math.atan2(m.y,m.x);P.anim+=dt*P.moving;
   P.x+=vx*dt;P.y+=vy*dt;
-  let maxR=RING[acc+1]-P.r;const d=hyp(P.x,P.y);if(d>maxR){P.x*=maxR/d;P.y*=maxR/d}
+  let maxR=RING[acc+1]-P.r;const d=hyp(P.x,P.y);if(d>maxR){P.x*=maxR/d;P.y*=maxR/d;if(acc<4&&P.moving&&P.manT>0&&!(P.dashT>0)&&time-(P.barT||-99)>6&&(m.x*P.x+m.y*P.y)>0){P.barT=time;toast('Барьер зоны '+(acc+1)+': сначала победи Стража зоны '+acc+' (стрелка «Страж»)',2800)}} /* круг 21: упёрся в барьер — объясняем, почему дальше нельзя */
   if(BF.active){const ax=P.x-ALTAR.x,ay=P.y-ALTAR.y,ad=hyp(ax,ay),mr=ARENA_R-P.r;if(ad>mr){P.x=ALTAR.x+ax/ad*mr;P.y=ALTAR.y+ay/ad*mr}}
   P.calmT-=dt;if(ST.regen>0&&P.calmT<=0&&P.hp<ST.hp)P.hp=Math.min(ST.hp,P.hp+ST.hp*ST.regen*dt); // реген только вне боя
-  if(inBase()){P.hp=Math.min(ST.hp,P.hp+ST.hp*.35*dt);if(S.bag.n>0)deposit()}
+  if(inBase()){if(P.hp<ST.hp){P.hp=Math.min(ST.hp,P.hp+ST.hp*.35*dt);hudT=0}if(S.bag.n>0)deposit()} /* круг 21: полоса HP на базе обновляется в том же кадре, что и лечение */
   if(P.swing){P.swing.t-=dt;if(P.swing.t<=0)P.swing=null}
   updWeapons(dt);
   if(S.set.auto&&S.set.autoBoss&&acc>=4&&!BF.active&&BF.cool<=0&&hyp(P.x-ALTAR.x,P.y-ALTAR.y)<55)startBoss() // только если игрок сам включил «АВТО бьёт боссов»
@@ -734,9 +734,10 @@ function update(dt){time+=dt;S.stats.play+=dt;BF.cool-=dt;if(BF.active)BF.t+=dt;
  {let tx=P.x,ty=P.y;if(BF.active&&BF.boss){tx+=(BF.boss.x-P.x)*.3;ty+=(BF.boss.y-P.y)*.35-30}/* круг 16: в бою камера чуть смещена к боссу и вниз — босс не уходит под карточки HUD */cam.x+=(tx-cam.x)*Math.min(1,dt*8);cam.y+=(ty-cam.y)*Math.min(1,dt*8)}cam.shake*=Math.pow(.01,dt);
  saveT-=dt;if(saveT<=0){saveT=2;save()}
  for(const k in S.buff)if(S.buff[k]>0)S.buff[k]-=dt;
- {const q=S.quest;if(q&&typeof q.left==='number'){q.left-=dt;if(q.left<=0){toast(q.k==='fast'?'Время вышло — вот новое задание':'Задание обновлено');S.quest=null;newQuest()}}}
+ {const q=S.quest;if(q&&typeof q.left==='number'){q.left-=dt;if(q.left<=0){toast(q.k==='fast'?'Время вышло — вот новое задание':'Время на задание «'+q.txt+'» вышло — вот новое',3200);S.quest=null;newQuest()}}}
  if(S.qSkipT>0)S.qSkipT-=dt;musicIntensity(dt);
  dailyT-=dt;if(dailyT<=0){dailyT=10;checkDaily()}
+ {const zk=inBase()?0:hudRing();if(zk!==updHud.zk){updHud.zk=zk;hudT=0}} /* круг 21: метка зоны меняется в том же кадре, что и позиция (после телепорта/респавна не висит старая зона) */
  hudT-=dt;if(hudT<=0){hudT=.1;if(!questValid()){S.quest=null;newQuest()}updHud()}}
 const rings=[],ghosts=[];const aliveG=g=>g.die>0;
 function updParticles(dt){for(const f of fxs)f.life-=dt;compact(fxs,aliveL);for(const r of rings)r.life-=dt;compact(rings,aliveL);for(const g of ghosts)g.die-=dt;compact(ghosts,aliveG);if(FX.dep>0)FX.dep-=dt;for(const p of parts){p.life-=dt;p.x+=p.vx*dt;p.y+=p.vy*dt;p.vx*=.92;p.vy*=.92}compact(parts,aliveL);
@@ -923,7 +924,7 @@ const vw=W/VZ,vh=H/VZ,L=cam.x-vw/2-40,T=cam.y-vh/2-40,R=L+vw+80,B=T+vh+80;
   ctx.save();ctx.translate(-13,-6);ctx.rotate(-k*.9);ctx.fillStyle='#a07a3a';ctx.fillRect(0,-8,26,8);ctx.fillStyle='#6b4a1d';ctx.fillRect(0,-8,26,3);ctx.fillStyle='#ffd34d';ctx.fillRect(0,-2,26,2);ctx.restore()}}
  // алтарь
  if(acc>=4){ctx.save();ctx.translate(ALTAR.x,ALTAR.y);const pul=.6+.4*Math.sin(time*3);const ali=im('altar');if(ali){ctx.drawImage(ali,-66,-66,132,132);ctx.strokeStyle=b.acc;ctx.globalAlpha=pul*.7;ctx.lineWidth=4;ctx.beginPath();ctx.arc(0,0,68,0,TAU);ctx.stroke();ctx.globalAlpha=1}else{ctx.fillStyle='#2a1030';ctx.beginPath();ctx.arc(0,0,58,0,TAU);ctx.fill();ctx.strokeStyle=b.acc;ctx.globalAlpha=pul;ctx.lineWidth=4;ctx.beginPath();for(let i=0;i<=5;i++){const a=-Math.PI/2+i*TAU*2/5;i?ctx.lineTo(Math.cos(a)*46,Math.sin(a)*46):ctx.moveTo(Math.cos(a)*46,Math.sin(a)*46)}ctx.stroke();ctx.globalAlpha=1;}
-  if(!BF.active){ctx.font='bold 13px sans-serif';ctx.textAlign='center';ctx.fillStyle='#fff';ctx.fillText('АЛТАРЬ БОССА',0,80)}ctx.restore();
+  ctx.restore();/* круг 21: подпись алтаря — в render() поверх героя */
   if(BF.active){ctx.save();ctx.strokeStyle='#1a0e28';ctx.globalAlpha=.5;ctx.lineWidth=9;ctx.beginPath();ctx.arc(ALTAR.x,ALTAR.y,ARENA_R,0,TAU);ctx.stroke();ctx.globalAlpha=1;ctx.strokeStyle='#7cf3ff';ctx.lineWidth=5;ctx.setLineDash([16,10]);ctx.lineDashOffset=time*50;ctx.beginPath();ctx.arc(ALTAR.x,ALTAR.y,ARENA_R,0,TAU);ctx.stroke();ctx.restore()}}}
 function rrect(x,y,w,h,r){ctx.beginPath();ctx.moveTo(x+r,y);ctx.arcTo(x+w,y,x+w,y+h,r);ctx.arcTo(x+w,y+h,x,y+h,r);ctx.arcTo(x,y+h,x,y,r);ctx.arcTo(x,y,x+w,y,r);ctx.closePath()}
 function eyes(e,s,ox=0,oy=-s*.15,sz=.22){const a=Math.atan2(P.y-e.y,P.x-e.x);for(const k of[-1,1]){const x=ox+k*s*.32,y=oy;ctx.fillStyle='#fff';ctx.beginPath();ctx.arc(x,y,s*sz,0,TAU);ctx.fill();ctx.fillStyle='#1a1426';ctx.beginPath();ctx.arc(x+Math.cos(a)*s*.08,y+Math.sin(a)*s*.08,s*sz*.55,0,TAU);ctx.fill()}}
@@ -990,7 +991,7 @@ function drawPlayer(){if(P.dead)return;ctx.save();ctx.translate(P.x,P.y);const b
 function drawWarn(w){const k=w.t/w.T;ctx.save();if(w.kind==='c'){const wi=warnImg('circle',w.dmg>0?'#ff3d6b':'#ff9a3d');if(wi){ctx.globalAlpha=.55;ctx.drawImage(wi,w.x-w.r-2,w.y-w.r-2,w.r*2+4,w.r*2+4);ctx.globalAlpha=1}else{ctx.strokeStyle='rgba(26,14,40,.55)';ctx.lineWidth=5;ctx.beginPath();ctx.arc(w.x,w.y,w.r,0,TAU);ctx.stroke();ctx.fillStyle=w.dmg>0?'rgba(255,40,60,.14)':'rgba(255,140,40,.14)';ctx.fill()}ctx.fillStyle=w.dmg>0?'rgba(255,40,60,.32)':'rgba(255,140,40,.32)';ctx.beginPath();ctx.arc(w.x,w.y,w.r*k,0,TAU);ctx.fill();ctx.strokeStyle='rgba(255,80,80,.8)';ctx.lineWidth=2;ctx.beginPath();ctx.arc(w.x,w.y,w.r,0,TAU);ctx.stroke();
   if(k>.55){ctx.strokeStyle=k>.85&&Math.sin(time*40)>0?'rgba(255,255,255,.95)':'rgba(255,60,80,.95)';ctx.lineWidth=3.5;ctx.beginPath();ctx.arc(w.x,w.y,w.r-3,0,TAU);ctx.stroke()}if(k>.88){ctx.strokeStyle='rgba(255,236,236,'+Math.min(1,(k-.88)*8).toFixed(2)+')';ctx.lineWidth=3;ctx.beginPath();ctx.arc(w.x,w.y,w.r-7,0,TAU);ctx.stroke()}}
  else{ctx.translate(w.x,w.y);ctx.rotate(Math.atan2(w.dy,w.dx));const ws=warnImg('strip','#ff3d6b');if(ws){const h=w.w+4,cap=Math.min(h/2,w.len/2);ctx.globalAlpha=.55;ctx.drawImage(ws,0,0,32,64,-2,-h/2,cap,h);ctx.drawImage(ws,32,0,192,64,cap-2,-h/2,w.len+4-cap*2,h);ctx.drawImage(ws,224,0,32,64,w.len+2-cap,-h/2,cap,h);ctx.globalAlpha=1}else{ctx.strokeStyle='rgba(26,14,40,.55)';ctx.lineWidth=5;ctx.strokeRect(0,-w.w/2,w.len,w.w);ctx.fillStyle='rgba(255,40,60,.14)';ctx.fillRect(0,-w.w/2,w.len,w.w)}ctx.fillStyle='rgba(255,40,60,.32)';ctx.fillRect(0,-w.w/2,w.len*k,w.w);if(k>.55){ctx.strokeStyle=k>.85&&Math.sin(time*40)>0?'rgba(255,255,255,.95)':'rgba(255,60,80,.95)';ctx.lineWidth=3;ctx.strokeRect(0,-w.w/2,w.len,w.w)}if(k>.88){ctx.strokeStyle='rgba(255,236,236,'+Math.min(1,(k-.88)*8).toFixed(2)+')';ctx.lineWidth=3;ctx.strokeRect(4,-w.w/2+4,w.len-8,w.w-8)}}ctx.restore()}
-const ARW=[],FPL=[];
+const ARW=[],FPL=[],ALTL={y:0};let FRN=0;
 function arrowTo(tx,ty,col,label,dist){const sx=(tx-cam.x)*ZOOM+W/2,sy=(ty-cam.y)*ZOOM+H/2;const m=40;
  /* bugfix: верх стрелок — под карточкой задания (а не фикс. 165 px), цель под HUD считается скрытой; у Босса/Стража — расстояние */
  const T0=Math.min(H-SAFE.b-150,Math.max(SAFE.t+165,hudBottom()+24));if(sx>m&&sx<W-m&&sy>Math.max(m+SAFE.t+80,T0-6)&&sy<H-m-SAFE.b-90)return;
@@ -1015,7 +1016,7 @@ function drawMinimapRaw(){const R=46,x=W-SAFE.r-10-R,y=SAFE.t+60+R,sc=R/WORLD_R,
  ctx.globalAlpha=1;ctx.strokeStyle='#1a0e28';ctx.lineWidth=4;ctx.beginPath();ctx.arc(x,y,R+3,0,TAU);ctx.stroke();ctx.strokeStyle='#ffffff30';ctx.lineWidth=1.5;ctx.beginPath();ctx.arc(x,y,R+1,0,TAU);ctx.stroke();
  {const hx=x+P.x*sc,hy=y+P.y*sc,a=P.face;ctx.translate(hx,hy);ctx.rotate(a);ctx.fillStyle='#fff';ctx.strokeStyle='#1a0e28';ctx.lineWidth=1.5;ctx.beginPath();ctx.moveTo(5,0);ctx.lineTo(-3.5,3.5);ctx.lineTo(-2,0);ctx.lineTo(-3.5,-3.5);ctx.closePath();ctx.stroke();ctx.fill()}ctx.restore()}
 let VZ=1;
-function render(){SPRB=0;ctx.setTransform(DPR,0,0,DPR,0,0);ctx.clearRect(0,0,W,H);
+function render(){SPRB=0;FRN++;ctx.setTransform(DPR,0,0,DPR,0,0);ctx.clearRect(0,0,W,H);
  const sh=cam.shake>.3&&!S.set.calm?cam.shake:0;const ox=sh?rand(-sh,sh):0,oy=sh?rand(-sh,sh):0;
  VZ=ZOOM*(mode==='menu'?1.5:1);ctx.save();ctx.translate(W/2+ox,H/2+oy);ctx.scale(VZ,VZ);ctx.translate(-cam.x,-cam.y);
  drawGround();
@@ -1035,6 +1036,7 @@ function render(){SPRB=0;ctx.setTransform(DPR,0,0,DPR,0,0);ctx.clearRect(0,0,W,H
  // онбординг: подсветка ближайшей цели для новичка и базы при полном рюкзаке
  if(mode==='play'&&!P.dead){const pu=Math.sin(time*5);if(S.stats.kills<5&&!S.set.auto){let best=null,bd=420*420;for(const e of VIS){if(e.type==='guard'||e.type==='boss')continue;const d=dist2(e,P);if(d<bd){bd=d;best=e}}if(best){ctx.strokeStyle='#7cf3ff';ctx.lineWidth=3;ctx.globalAlpha=.75+.25*pu;ctx.beginPath();ctx.arc(best.x,best.y,best.r+10+pu*2,0,TAU);ctx.stroke();ctx.globalAlpha=1}}
   if(S.bag.n>=ST.cap&&!inBase()){ctx.strokeStyle='#ffffff';ctx.lineWidth=4;ctx.globalAlpha=.35+.25*pu;ctx.setLineDash([16,10]);ctx.lineDashOffset=time*30;ctx.beginPath();ctx.arc(0,0,BASE_R+8,0,TAU);ctx.stroke();ctx.setLineDash([]);ctx.globalAlpha=1}}
+ if(accessible()>=4&&!BF.active){const up=Math.abs(P.x-ALTAR.x)<75&&P.y>ALTAR.y+25&&P.y<ALTAR.y+140,ly=ALTAR.y+(up?-80:80);ALTL.y=ly;ctx.font='900 13px sans-serif';ctx.textAlign='center';ctx.lineWidth=4;ctx.lineJoin='round';ctx.strokeStyle='#120a1e';ctx.strokeText('АЛТАРЬ БОССА',ALTAR.x,ly);ctx.fillStyle='#fff';ctx.fillText('АЛТАРЬ БОССА',ALTAR.x,ly)} /* круг 21: подпись не закрывается героем — рисуется поверх и уходит над алтарём, если герой стоит на её месте */
  ctx.textAlign='center';FPL.length=0;for(const f of floats){/* bugfix: цифры в толпе не ложатся друг на друга — более новая плавно поднимается на строку (до 3), старые стоят */const hw=f.txt.length*f.size*.3;let t=0;for(let k=0;k<3;k++){let hit=false;for(const o of FPL)if(Math.abs(o.x-f.x)<hw+o.hw&&Math.abs(o.py-(f.y+t))<(f.size+o.size)*.45){hit=true;break}if(!hit)break;t-=f.size*.95}f.dy=(f.dy||0)+(t-(f.dy||0))*.35;f.hw=hw;f.py=f.y+f.dy;FPL.push(f);ctx.globalAlpha=Math.min(1,f.life*2);ctx.font='900 '+Math.round(f.size*(1+(f.pop>0?f.pop*2:0)))+'px sans-serif';ctx.lineWidth=4.5;ctx.lineJoin='round';ctx.strokeStyle='#120a1e';ctx.strokeText(f.txt,f.x,f.py);ctx.fillStyle=f.col;ctx.fillText(f.txt,f.x,f.py)}ctx.globalAlpha=1;
  ctx.restore();
  if(mode==='menu')return;
@@ -1058,11 +1060,12 @@ function setSt(sel,k,v){const el=$(sel);const c='_s'+k;if(el[c]!==v){el[c]=v;el.
 function setH(sel,h){const el=$(sel);if(el._h!==h){el._h=h;el.innerHTML=h}}
 // bugfix: зона в HUD с гистерезисом 24 ед. — на границе колец надпись не мигает «Зона 1/2» на каждом шаге
 function hudRing(){const r=Math.min(4,Math.max(1,ringOf(P.x,P.y))),o=hudRing.z;if(o&&Math.abs(o-r)===1&&Math.abs(hyp(P.x,P.y)-RING[Math.max(o,r)])<24)return o;return hudRing.z=r}
+const qTime=t=>{t=Math.max(0,Math.ceil(t));return t<60?t+' с':Math.floor(t/60)+':'+String(t%60).padStart(2,'0')};
 function updHud(){const hpF=Math.max(0,P.hp/ST.hp);setSt('#hpfill','width',hpF*100+'%');$('#hpbar').classList.toggle('low',hpF<.3);setT('#hptxt',fmt(Math.max(0,P.hp))+' / '+fmt(ST.hp));
  setSt('#xpfill','width',Math.min(100,S.xp/xpNeed(S.lvl)*100)+'%');setT('#lvl',S.lvl);setT('#bank',fmt(S.bank));if(S.bag.n!==updHud.lb){if(S.bag.n>(updHud.lb||0))bump('#bagchip');updHud.lb=S.bag.n}setT('#bag',S.bag.n+'/'+ST.cap);$('#bagchip').classList.toggle('full',S.bag.n>=ST.cap);
  const acc=accessible(),r=hudRing();const pw=power(),rec=inBase()?recPower(tier(S.ch,acc)):recPower(tier(S.ch,r));setT('#pow',fmt(pw));setSt('#pow','color',pw>=rec?'#8dff9c':pw>=rec*.75?'#ffd166':'#ff7b8c');
  setH('#zone','Глава '+S.ch+' · '+biomeName(S.ch)+' · '+(inBase()?'База':'Зона '+r)+' · <span style="white-space:nowrap">нужно '+fmt(BF.active?bossRec(S.ch):rec)+'</span>');/* круг 16: «нужно N» не рвётся на две строки */
- const q=S.quest;$('#quest').classList.toggle('hidden',!(q&&q.reward&&typeof q.reward==='object'));if(q&&q.reward&&typeof q.reward==='object'){setH('#qHead',q.chain?'Цепочка '+(q.ci+1)+'/'+q.chain.length+':':'Задание:');setH('#qTxt',q.txt);setH('#qNum',(q.k==='deposit'?fmt(q.have)+'/'+fmt(q.need):q.have+'/'+q.need)+(q.k==='fast'&&typeof q.left==='number'?' · <b style="color:#ff9a9a">'+Math.ceil(q.left)+' с</b>':''));setH('#qRew',rewardTxt(q.reward));setSt('#qFill','width',Math.min(100,q.have/q.need*100)+'%');
+ const q=S.quest;$('#quest').classList.toggle('hidden',!(q&&q.reward&&typeof q.reward==='object'));if(q&&q.reward&&typeof q.reward==='object'){setH('#qHead',q.chain?'Цепочка '+(q.ci+1)+'/'+q.chain.length+':':'Задание:');setH('#qTxt',q.txt);setH('#qNum',(q.k==='deposit'?fmt(q.have)+'/'+fmt(q.need):q.have+'/'+q.need)+(typeof q.left==='number'?' · <b style="color:'+(q.k==='fast'||q.left<30?'#ff9a9a':'#ffe08a')+'">'+qTime(q.left)+'</b>':'')/* круг 21: у всех заданий с таймером видно оставшееся время */);setH('#qRew',rewardTxt(q.reward));setSt('#qFill','width',Math.min(100,q.have/q.need*100)+'%');
   const sk=$('#qSkip'),st=S.qSkipT>0?Math.ceil(S.qSkipT)+'с':'↻';sk.disabled=S.qSkipT>0;if(sk.textContent!==st)sk.textContent=st}
  const dl=S.daily;setH('#daily',dl&&!dl.done?'<b>Ежедневное:</b> '+dl.txt+' '+(dl.k==='deposit'?fmt(dl.have)+'/'+fmt(dl.need):dl.have+'/'+dl.need)+' · '+rewardTxt(dl.reward):'');
  setSt('#dashCd','height',Math.max(0,P.dashCd/2.2)*100+'%');
@@ -1198,8 +1201,11 @@ let qSkipArm=0;$('#hud').addEventListener('pointerdown',e=>{if(e.target.id!=='qS
  {const q=S.quest,now=performance.now();if(q&&(q.chain?(q.ci>0||q.have>0):q.have>=q.need*.5)&&now-qSkipArm>3500){qSkipArm=now;sfx('err');toast((q.chain?'Цепочка '+(q.ci+1)+'/'+q.chain.length:'Прогресс '+(q.k==='deposit'?fmt(q.have)+'/'+fmt(q.need):q.have+'/'+q.need))+' пропадёт. Нажми ↻ ещё раз, чтобы заменить задание',3500);return}qSkipArm=0} /* bugfix: прогресс задания/цепочки не теряется молча */
  S.quest=null;newQuest();S.qSkipT=45;sfx('click');vib(8,true);toast('Задание заменено');updHud();save()});hb('#bPause',()=>{if(P.dead||BF.winT>0)return;sfx('click');openSet('play')});
 $('#bPlay').onclick=startGame;$('#bHow').onclick=()=>{initAudio();showHow()};$('#bSet0').onclick=()=>{initAudio();openSet('menu')};
-window.addEventListener('keydown',e=>{keys[e.code]=true;if(mode==='play'){if(e.code==='Space'){dash();e.preventDefault()}else if(e.code==='KeyH'){if(!e.repeat)homeBtn()}else if(e.code==='KeyB'){if(!e.repeat&&canBack())homeBtn()}else if(e.code==='KeyF'||e.code==='Enter')openBossConfirm();else if(e.code==='KeyU'){if(!e.repeat)openUp()}else if(e.code==='KeyT'){if(!e.repeat)toggleAuto()}else if(e.code==='Escape')openSet('play')}else if(e.code==='Escape'){if(!$('#upScreen').classList.contains('hidden'))closeUp();else if(!$('#pause').classList.contains('hidden'))closeSet()}});
-window.addEventListener('keyup',e=>{keys[e.code]=false});
+/* круг 21: клавиша = e.code (физическая, не зависит от раскладки и CapsLock); если code пуст (синтетические/CDP-события) — по e.key, включая русскую раскладку */
+const KEYMAP={w:'KeyW','ц':'KeyW',a:'KeyA','ф':'KeyA',s:'KeyS','ы':'KeyS',d:'KeyD','в':'KeyD',h:'KeyH','р':'KeyH',b:'KeyB','и':'KeyB',f:'KeyF','а':'KeyF',u:'KeyU','г':'KeyU',t:'KeyT','е':'KeyT',' ':'Space',spacebar:'Space',up:'ArrowUp',down:'ArrowDown',left:'ArrowLeft',right:'ArrowRight',esc:'Escape'};
+const keyCode=e=>e.code||KEYMAP[(e.key||'').toLowerCase()]||e.key||'';
+window.addEventListener('keydown',e=>{const c=keyCode(e);keys[c]=true;if(mode==='play'){if(c==='Space'){dash();e.preventDefault()}else if(c==='KeyH'){if(!e.repeat)homeBtn()}else if(c==='KeyB'){if(!e.repeat&&canBack())homeBtn()}else if(c==='KeyF'||c==='Enter')openBossConfirm();else if(c==='KeyU'){if(!e.repeat)openUp()}else if(c==='KeyT'){if(!e.repeat)toggleAuto()}else if(c==='Escape')openSet('play')}else if(c==='Escape'){if(!$('#upScreen').classList.contains('hidden'))closeUp();else if(!$('#pause').classList.contains('hidden'))closeSet()}});
+window.addEventListener('keyup',e=>{keys[keyCode(e)]=false;const k2=KEYMAP[(e.key||'').toLowerCase()];if(k2)keys[k2]=false}); /* круг 21: отпускание снимает клавишу и по code, и по key — смешанные события не «залипают» */
 window.addEventListener('blur',()=>{for(const k in keys)keys[k]=false;joy.id=null});
 document.addEventListener('touchmove',e=>{if(!e.target.closest('.scroll'))e.preventDefault()},{passive:false});
 document.addEventListener('gesturestart',e=>e.preventDefault());document.addEventListener('dblclick',e=>e.preventDefault());
@@ -1230,7 +1236,7 @@ $('#bPlay').textContent=S.started?'Продолжить · ур. '+S.lvl:'Игр
 spawnDemo();
 requestAnimationFrame(frame);
 if('serviceWorker' in navigator&&location.protocol.startsWith('http'))window.addEventListener('load',()=>{navigator.serviceWorker.register('sw.js').catch(()=>{});navigator.serviceWorker.ready.then(r=>{if(r.active)r.active.postMessage('fill')}).catch(()=>{})});/* круг 18: докачать то, что не успела установка */
-window.__G={get ARW(){return ARW},hudRing,toggleAuto,homeBtn,get cam(){return cam},get floats(){return floats},ALTAR,RING,AU,MU,TH,musicTick,joy,TILES,PERF,autoQuality,openSlotPick,checkStreak,die:()=>die(),FX,heroDps,weaponDps,WEAP,newQuest,questEv,checkDaily,openBossConfirm,get needFrame(){return needFrame},BAL,UPG,upCost,recPower,bossRec,tier,power,accessible,get S(){return S},get ST(){return ST},P,BF,get enemies(){return enemies},startBoss,update,recalc,openUp,closeUp,showResult,switchChapter,get mode(){return mode},set mode(v){mode=v},render};
+window.__G={get ARW(){return ARW},get FRN(){return FRN},ALTL,keys,get time(){return time},hudRing,toggleAuto,homeBtn,get cam(){return cam},get floats(){return floats},ALTAR,RING,AU,MU,TH,musicTick,joy,TILES,PERF,autoQuality,openSlotPick,checkStreak,die:()=>die(),FX,heroDps,weaponDps,WEAP,newQuest,questEv,checkDaily,openBossConfirm,get needFrame(){return needFrame},BAL,UPG,upCost,recPower,bossRec,tier,power,accessible,get S(){return S},get ST(){return ST},P,BF,get enemies(){return enemies},startBoss,update,recalc,openUp,closeUp,showResult,switchChapter,get mode(){return mode},set mode(v){mode=v},render};
 </script>
 </body>
 </html>
