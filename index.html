@@ -309,10 +309,11 @@ function fixSave(o){sanitize(o,newSave());const WK=['sword','blaster','orbit','l
  o.slots=[0,1].map(i=>WK.includes(o.slots[i])?o.slots[i]:null);if(!o.slots[0])o.slots[0]=o.slots[1]||'sword';if(o.slots[1]===o.slots[0])o.slots[1]=null;
  o.lvl=Math.max(1,Math.floor(o.lvl));o.maxCh=Math.max(1,Math.floor(o.maxCh));o.ch=Math.min(o.maxCh,Math.max(1,Math.floor(o.ch)));o.unlocked=Math.min(4,Math.max(1,Math.floor(o.unlocked)));o.maxCh=Math.min(99,o.maxCh);o.ch=Math.min(o.ch,o.maxCh);o.bank=Math.max(0,o.bank);o.sparks=Math.max(0,o.sparks);o.bossFails=Math.min(50,Math.max(0,o.bossFails));o.streak.n=Math.max(0,o.streak.n);o.set.mvol=Math.min(1,Math.max(0,o.set.mvol));o.set.svol=Math.min(1,Math.max(0,o.set.svol));
  for(const k in o.up)o.up[k]=Math.max(0,Math.floor(o.up[k]));for(const k in o.tal)o.tal[k]=Math.max(0,Math.floor(o.tal[k]));if(o.quest&&typeof o.quest!=='object')o.quest=null;if(o.daily&&typeof o.daily!=='object')o.daily=null;return o}
-function load(){try{const r=localStorage.getItem(SAVE_KEY);if(r)return fixSave(merge(newSave(),JSON.parse(r)))}catch(e){}return newSave()}
+function load(){try{const r=localStorage.getItem(SAVE_KEY);if(r)return fixSave(merge(newSave(),JSON.parse(r)))}catch(e){}
+ try{const b=localStorage.getItem(SAVE_KEY+'_bak');if(b)return fixSave(merge(newSave(),JSON.parse(b)))}catch(e){}/* круг 18: битый сейв — берём резервную копию */return newSave()}
 let S=load();
 try{if(!S.calmAsked){S.calmAsked=true;if(matchMedia('(prefers-reduced-motion: reduce)').matches)S.set.calm=true}}catch(e){}document.body.classList.toggle('calm',!!S.set.calm);
-function save(){try{S.last=Date.now();localStorage.setItem(SAVE_KEY,JSON.stringify(S))}catch(e){}}
+let saveN=0;function save(){try{S.last=Date.now();const j=JSON.stringify(S);localStorage.setItem(SAVE_KEY,j);if(saveN++%20===0)localStorage.setItem(SAVE_KEY+'_bak',j)}catch(e){}}
 
 /* ---------- ЗВУК (WebAudio, всё синтезируется) ---------- */
 const AU={c:null,m:null,sfx:null,duck:null,mf:null,b:[null,null],nb:null,last:{},needResume:false};
@@ -324,7 +325,7 @@ function initAudio(){
  const AC=window.AudioContext||window.webkitAudioContext;if(!AC)return;
  try{AU.c=new AC()}catch(e){return}
  const c=AU.c;
- const lim=c.createDynamicsCompressor();lim.threshold.value=-10;lim.knee.value=6;lim.ratio.value=12;lim.attack.value=.003;lim.release.value=.2;lim.connect(c.destination);AU.lim=lim;
+ const lim=c.createDynamicsCompressor();lim.threshold.value=-8;lim.knee.value=10;lim.ratio.value=6;lim.attack.value=.005;lim.release.value=.25;/* круг 17: мягче — микс не «дышит» на каждом взрыве */lim.connect(c.destination);AU.lim=lim;
  AU.m=c.createGain();AU.m.gain.value=.9;AU.m.connect(lim);
  AU.sfx=c.createGain();AU.sfx.connect(AU.m);
  // эхо: одна задержка с обратной связью и затуханием ВЧ; посылы с музыки (после дакинга) и немного с SFX
@@ -351,32 +352,33 @@ function tone(f,dur,type='sine',vol=.3,slide=0,when=0,dest){
  const c=AU.c;if(!c)return;const t=c.currentTime+when,a=Math.min(.01,dur*.3);const o=c.createOscillator(),g=c.createGain();
  o.type=type;o.frequency.setValueAtTime(f,t);if(slide)o.frequency.exponentialRampToValueAtTime(Math.max(30,f+slide),t+dur);
  g.gain.setValueAtTime(0.0001,t);g.gain.exponentialRampToValueAtTime(Math.max(.0002,vol),t+a);g.gain.exponentialRampToValueAtTime(0.0001,t+Math.max(dur,a+.02));
- o.connect(g);g.connect(dest||AU.cur||AU.sfx);o.start(t);o.stop(t+dur+.03)}
+ o.connect(g);g.connect(dest||AU.cur||AU.sfx);o.onended=()=>{try{o.disconnect();g.disconnect()}catch(e){}};o.start(t);o.stop(t+dur+.03)}
 function noise(dur,vol,freq,ft='bandpass',when=0,dest,q=.8){
  const c=AU.c;if(!c)return;const t=c.currentTime+when;const s=c.createBufferSource();s.buffer=AU.nb;s.playbackRate.value=.8+Math.random()*.4;
  const f=c.createBiquadFilter();f.type=ft;f.frequency.value=freq;f.Q.value=q;const g=c.createGain();
- g.gain.setValueAtTime(0.0001,t);g.gain.exponentialRampToValueAtTime(Math.max(.0002,vol),t+.005);g.gain.exponentialRampToValueAtTime(0.0001,t+dur);s.connect(f);f.connect(g);g.connect(dest||AU.cur||AU.sfx);s.start(t,Math.random()*.3);s.stop(t+dur+.02)}
+ g.gain.setValueAtTime(0.0001,t);g.gain.exponentialRampToValueAtTime(Math.max(.0002,vol),t+.005);g.gain.exponentialRampToValueAtTime(0.0001,t+dur);s.connect(f);f.connect(g);g.connect(dest||AU.cur||AU.sfx);
+ s.loop=true;/* круг 17: буфер 0,5 с со случайным смещением обрывал хвост boom/telL/die/bossStart */s.onended=()=>{try{s.disconnect();f.disconnect();g.disconnect()}catch(e){}};s.start(t,Math.random()*.45);s.stop(t+dur+.02)}
 // музыкальная нота с медленной атакой/релизом (пэды) — линейные огибающие
 function mnote(f,dur,type,vol,when,dest,att=.01,det=0){
  const c=AU.c,t=c.currentTime+when,o=c.createOscillator(),g=c.createGain();o.type=type;o.frequency.value=f;
- if(det){const o2=c.createOscillator();o2.type=type;o2.frequency.value=f;o2.detune.value=det;o.detune.value=-det;o2.connect(g);o2.start(t);o2.stop(t+dur+.02)}
+ if(det){const o2=c.createOscillator();o2.type=type;o2.frequency.value=f;o2.detune.value=det;o.detune.value=-det;o2.connect(g);o2.onended=()=>{try{o2.disconnect()}catch(e){}};o2.start(t);o2.stop(t+dur+.02)}
  g.gain.setValueAtTime(0,t);g.gain.linearRampToValueAtTime(vol,t+att);g.gain.setValueAtTime(vol,t+Math.max(att,dur*.6));g.gain.linearRampToValueAtTime(0,t+dur);
- o.connect(g);g.connect(dest);o.start(t);o.stop(t+dur+.02)}
+ o.connect(g);g.connect(dest);o.onended=()=>{try{o.disconnect();g.disconnect()}catch(e){}};o.start(t);o.stop(t+dur+.02)}
 const mtof=m=>440*Math.pow(2,(m-69)/12);
 // FM-лид: модулятор с быстро гаснущим индексом — «звонкий колокольчик»
 function fmnote(f,ratio,idx,dur,vol,when,dest){const c=AU.c,t=c.currentTime+when,mo=c.createOscillator(),mg=c.createGain(),ca=c.createOscillator(),cg=c.createGain();
  mo.frequency.value=f*ratio;mg.gain.setValueAtTime(f*idx,t);mg.gain.exponentialRampToValueAtTime(f*idx*.05,t+Math.min(dur,.25));mo.connect(mg);mg.connect(ca.frequency);ca.frequency.value=f;
- cg.gain.setValueAtTime(0,t);cg.gain.linearRampToValueAtTime(vol,t+.008);cg.gain.exponentialRampToValueAtTime(.0001,t+dur);ca.connect(cg);cg.connect(dest);mo.start(t);ca.start(t);mo.stop(t+dur+.02);ca.stop(t+dur+.02)}
+ cg.gain.setValueAtTime(0,t);cg.gain.linearRampToValueAtTime(vol,t+.008);cg.gain.exponentialRampToValueAtTime(.0001,t+dur);ca.connect(cg);cg.connect(dest);ca.onended=()=>{try{mo.disconnect();mg.disconnect();ca.disconnect();cg.disconnect()}catch(e){}};mo.start(t);ca.start(t);mo.stop(t+dur+.02);ca.stop(t+dur+.02)}
 // бас с фильтр-огибающей (для пилы/квадрата): «ква» вместо плоского жужжания
 function blip(f,dur,vol,when,dest,type){const c=AU.c,t=c.currentTime+when,o=c.createOscillator(),q=c.createBiquadFilter(),g=c.createGain();o.type=type;o.frequency.value=f;q.type='lowpass';q.Q.value=6;
  q.frequency.setValueAtTime(Math.min(5000,f*8),t);q.frequency.exponentialRampToValueAtTime(Math.max(150,f*1.2),t+dur*.7);g.gain.setValueAtTime(0,t);g.gain.linearRampToValueAtTime(vol,t+.008);g.gain.exponentialRampToValueAtTime(.0001,t+dur);
- o.connect(q);q.connect(g);g.connect(dest);o.start(t);o.stop(t+dur+.02)}
+ o.connect(q);q.connect(g);g.connect(dest);o.onended=()=>{try{o.disconnect();q.disconnect();g.disconnect()}catch(e){}};o.start(t);o.stop(t+dur+.02)}
 const vr=(x,oct=.25)=>x*Math.pow(2,rand(-oct,oct)); // разброс высоты
 const PENT=[0,2,4,7,9,12,14,16,19,21,24];let coinN=0,coinT=0;
 // [троттлинг мс, функция, приоритет: 0 — частые (могут отбрасываться), 1 — обычные, 2 — важные (+приглушение музыки)]
 const SFXDEF={
- hit:[40,()=>noise(.06,.16,vr(1500,.4),'bandpass',rand(.015)),0],
- crit:[60,()=>{noise(.08,.24,vr(2600,.3));tone(vr(1200,.15),.08,'square',.05,-500)},1],
+ hit:[40,()=>{const k=hitV++&3,f=vr(k===3?2600:1500,.35);noise(.06,k===3?.18:.15,f,'bandpass',rand(.015));if(k===3)tone(vr(260,.1),.05,'triangle',.035,-90)},0],
+ crit:[60,()=>{noise(.08,.22,vr(2600,.3));noise(.05,.1,5200,'highpass',.02);tone(vr(1200,.15),.08,'square',.05,-500)},1],
  swing:[90,()=>noise(.11,.1,vr(800,.2),'highpass'),0],
  shoot:[70,()=>tone(vr(900,.1),.07,'square',.055,-500),0],
  zap:[120,()=>{noise(.15,.15,3500,'highpass');tone(vr(220,.1),.12,'sawtooth',.05,600)},0],
@@ -384,16 +386,19 @@ const SFXDEF={
  deposit:[200,()=>[523,659,784,1047,1319].forEach((f,i)=>tone(f,.16,'triangle',.16,0,i*.055)),2],
  level:[300,()=>{[392,523,659,784,1047].forEach((f,i)=>tone(f,.22,'triangle',.18,0,i*.07));tone(300,.55,'sine',.08,900,.05)},2],
  buy:[60,()=>{tone(700,.07,'triangle',.16,300);tone(1050,.08,'triangle',.11,0,.05)},1],
- hurt:[120,()=>{tone(vr(170,.1),.18,'sawtooth',.13,-90);noise(.08,.12,600,'lowpass')},1],
- warn:[250,()=>{tone(110,.45,'sawtooth',.1,20);tone(116,.45,'sawtooth',.07)},2],
- telC:[250,()=>{tone(180,.5,'sine',.16,-70);tone(186,.5,'triangle',.08,-70);noise(.45,.05,500,'lowpass')},2], // босс: круги по земле
+ hurt:[120,()=>{tone(vr(300,.08),.16,'sawtooth',.13,-140);tone(vr(170,.1),.2,'triangle',.09,-70);noise(.07,.13,1200,'bandpass')},1],
+ lowhp:[6000,()=>{tone(330,.2,'triangle',.14,-60);tone(294,.28,'triangle',.11,-50,.18)},1],
+ step:[320,()=>{tone(740,.12,'triangle',.13,120);tone(988,.14,'triangle',.1,0,.07)},1],
+ shield:[70,()=>{tone(vr(1750,.1),.1,'triangle',.09,-900);noise(.05,.08,3400,'highpass')},1],
+ warn:[250,()=>{tone(220,.42,'sawtooth',.08,30);tone(232,.42,'sawtooth',.055)},1], /* круг 17: октавой выше (динамик iPhone), без приглушения музыки — замахи обычных врагов частые */
+ telC:[250,()=>{tone(300,.5,'sine',.14,-90);tone(310,.5,'triangle',.07,-90);noise(.45,.05,900,'lowpass')},2], // босс: круги по земле
  telR:[250,()=>[0,1,2].forEach(i=>tone(330+i*110,.18,'square',.05,0,i*.1)),2],                         // босс: кольцо пуль
- telL:[250,()=>{tone(90,.7,'sawtooth',.15,60);noise(.7,.06,900,'bandpass',0,0,2)},2],                       // босс: рывок по линии
+ telL:[250,()=>{tone(170,.7,'sawtooth',.13,90);tone(85,.7,'sine',.07,45);noise(.7,.06,900,'bandpass',0,null,2)},2],                       // босс: рывок по линии
  telS:[250,()=>{tone(140,.4,'square',.06,-40);tone(210,.4,'square',.05,-60,.12);tone(280,.4,'square',.04,-80,.24)},2], // босс: призыв
  boom:[120,()=>{noise(.4,.34,260,'lowpass');tone(70,.3,'sine',.2,-35)},2],
  dash:[100,()=>noise(.18,.22,vr(1200,.15),'bandpass'),1],
  tele:[200,()=>tone(300,.35,'sine',.16,900),1],
- kill:[50,()=>tone(vr(420,.2),.08,'triangle',.07,-200),0],
+ kill:[50,()=>{const k=hitV&1;tone(vr(k?380:470,.18),.09,'triangle',.07,-200);if(k)noise(.05,.06,900,'bandpass',.02)},0],
  killS:[50,()=>{noise(.07,.1,vr(500,.2),'lowpass');tone(vr(300,.2),.09,'sine',.08,-180)},0],   // слизни: «чвяк»
  killB:[50,()=>tone(vr(1400,.15),.07,'sine',.05,700),0],                                     // летучие: писк
  killH:[80,()=>{tone(vr(160,.1),.14,'triangle',.1,-80);noise(.1,.1,300,'lowpass')},1],       // крупные/элита
@@ -411,9 +416,9 @@ const SFXDEF={
  reward:[420,()=>[784,1047,1319].forEach((f,i)=>tone(f,.14,'sine',.12,0,i*.05)),1],
  gold:[300,()=>[1047,1319,1568].forEach((f,i)=>tone(f,.12,'sine',.12,0,i*.05)),1]};
 // лимит голосов: в окне 60 мс частым звукам отказываем раньше, важные проходят всегда
-let vN=[0,0],vWin=0;function voice(p){const n=performance.now();if(n-vWin>=60){vWin=n;vN[0]=vN[1]=0}if(p>=2)return true;const lim=S.set.eco?[3,6]:[5,9];if(vN[p]>=lim[p])return false;vN[p]++;return true}
+let vN=[0,0],vWin=0,hitV=0;function voice(p){const n=performance.now();if(n-vWin>=60){vWin=n;vN[0]=vN[1]=0}if(p>=2)return true;const lim=S.set.eco?[3,6]:[5,9];if(vN[p]>=lim[p])return false;vN[p]++;return true}
 function duck(to=.45,len=.5){const c=AU.c;if(!c||!AU.duck)return;const n=c.currentTime,g=AU.duck.gain;g.cancelScheduledValues(n);g.setValueAtTime(g.value,n);g.linearRampToValueAtTime(to,n+.04);g.linearRampToValueAtTime(1,n+len)}
-function sfx(n,x){if(!S.set.sfx||!AU.c||AU.c.state!=='running')return;const d=SFXDEF[n];if(!d)return;const now=performance.now();if(now-(AU.last[n]||0)<d[0])return;if(!voice(d[2]))return;AU.last[n]=now;
+function sfx(n,x){if(!S.set.sfx||!AU.c||AU.c.state!=='running')return;const d=SFXDEF[n];if(!d)return;const now=performance.now();if(now-(AU.last[n]||0)<d[0])return;if(d[2]===0&&now-(AU.last.hurt||-1e9)<90)return;/* круг 17: 90 мс после урона героя частые удары молчат */if(!voice(d[2]))return;AU.last[n]=now;
  if(x!==undefined&&AU.pan){const r=(x-cam.x)/(W/VZ/2);AU.cur=AU.pan[r<-.3?0:r>.3?2:1]}try{d[1]();if(d[2]===2&&S.set.music)duck()}catch(e){}AU.cur=null}
 function killSfx(e){sfx(e.elite||e.type==='guard'||e.type==='boar'||e.type==='bomber'?'killH':e.type==='bat'?'killB':(e.type==='slime'||e.type==='mini'||e.type==='splitter')?'killS':'kill',e.x)}
 /* Музыка: генеративные темы — своя для меню, каждого биома и босса.
@@ -429,13 +434,15 @@ const TH={
  5:{vol:1.35,rev:.2,dl:.09,mot:[0,3,5,9,null,7,5,null],bpm:100,root:57,sc:[0,2,3,5,7,9,10],prog:[[0,3,7],[5,9,12],[0,3,7],[-2,2,5]],bass:'x-8-x-8-o-8-x-8-',bw:'triangle',lw:'square',pad:'',arp:.65,perc:'k-w-h-w-k-w-h-ww',seed:6},
  6:{vol:1.2,rev:.38,dl:.14,lm:'fm',mot:[7,null,null,8,7,null,3,null],bpm:70,root:50,sc:[0,2,3,7,8],prog:[[0,3,7],[-4,0,3],[5,8,12],[7,11,14]],bass:'x---------------',bw:'sine',lw:'sine',pad:'triangle',arp:.4,perc:'',bell:1,seed:7},
  boss:{vol:1.5,rev:.2,dl:.1,lm:'fm',mot:[0,1,3,1,null,7,6,null],bpm:132,root:49,sc:[0,1,3,6,7,8,10],prog:[[0,3,7],[1,5,8],[0,3,6],[-1,3,6]],bass:'x8x8x8x8x8x8o8o8',bw:'sawtooth',lw:'square',pad:'',arp:.5,perc:'k-h-s-h-k-k-s-hh',seed:9}};
-const MU={name:null,a:0,step:0,next:0,base:.35,fadeEnd:0,si:0,fT:0};
+const MU={name:null,a:0,step:0,next:0,base:.35,fadeEnd:0,si:0,fT:0,rs:0};
 // снап к ладу темы: мотив следует за аккордом, но не вылезает из лада
 const snap=(T,v)=>{const o=Math.floor(v/12)*12,pc=((v%12)+12)%12;let b=T.sc[0],bd=99;for(const d of T.sc){const dd=Math.abs(d-pc);if(dd<bd){bd=dd;b=d}}return o+b};
 function lead(T,n,dur,vol,w,dst){if(T.lm==='fm'&&!S.set.eco)fmnote(mtof(n),2,1,dur*1.3,vol*1.1,w,dst);else tone(mtof(n),dur,T.lw,vol,0,w,dst)}
 // в паузе/прокачке/итогах тема не обрывается, а глохнет фильтром (см. musicTick)
 function curTheme(){if(!S.set.music)return null;if(mode!=='play'&&mode!=='menu')return MU.name;return BF.active?'boss':mode==='menu'?'menu':''+(((S.ch-1)%BIOMES.length)+1)}
-function musicTick(){const c=AU.c;if(!c||c.state!=='running'||document.hidden)return;
+function musicTick(){const c=AU.c;if(!c)return;
+ if(c.state!=='running'&&c.state!=='closed'&&!document.hidden&&(S.set.music||S.set.sfx)){const p=performance.now();if(p-MU.rs>1500){MU.rs=p;c.resume().then(()=>{AU.needResume=false;MU.next=0}).catch(()=>{})}}/* круг 17: после звонка/Siri («interrupted») звук возвращается без касания */
+ if(c.state!=='running'||document.hidden)return;
  const n=curTheme();
  if(n!==MU.name){const t=c.currentTime;MU.name=n;const fade=(g,v,d)=>{g.cancelScheduledValues(t);g.setValueAtTime(g.value,t);g.linearRampToValueAtTime(v,t+d)};
   if(n){fade(AU.b[MU.a].gain,0,1.2);MU.a^=1;const fd=n==='boss'?.6:1.5;fade(AU.b[MU.a].gain,MU.base,fd);MU.fadeEnd=t+fd;MU.step=0;MU.next=t+.1;const T=TH[n];AU.sM.gain.setTargetAtTime(T.rev||.2,t,.5);AU.dly.delayTime.setTargetAtTime(T.dl||.11,t,.3)}else{fade(AU.b[0].gain,0,.5);fade(AU.b[1].gain,0,.5)}}
@@ -444,18 +451,18 @@ function musicTick(){const c=AU.c;if(!c||c.state!=='running'||document.hidden)re
  // яркость по интенсивности боя; в меню-паузе — глухо
  {const muf=mode!=='play'&&mode!=='menu',ft=muf?650:eco?3000:2400+3600*MU.si;if(Math.abs(ft-MU.fT)>150){MU.fT=ft;AU.mf.frequency.setTargetAtTime(ft,c.currentTime,muf?.15:.4)}}
  const si=MU.si,padLow=Math.floor(c.currentTime/180)%2?-12:0;
- while(MU.next<c.currentTime+.4){const s=MU.step,w=MU.next-c.currentTime,bar=Math.floor(s/8),ch=T.prog[bar%T.prog.length],part=Math.floor(s/32)%4,i16=s%16;
-  const loop=Math.floor(s/128),alt=loop%2===1,breath=loop%5===4&&s%128>=112; // вариации по петлям и «дыхание» в конце каждой 5-й петли
-  const bc=T.bass[i16];if(bc!=='-'&&!(part===2&&i16%8)){const bf=mtof(T.root-24+(bc==='o'?ch[0]+7:bc==='8'?ch[0]+12:ch[0])),bd=spb*(bc==='x'?1.6:1.1);
+ while(MU.next<c.currentTime+.7){/* круг 18: запас 0,7 с — рывок главного потока не рвёт ритм */const s=MU.step,w=MU.next-c.currentTime,bar=Math.floor(s/8),ch=T.prog[bar%T.prog.length],part=Math.floor(s/32)%4,i16=s%16;
+  const loop=Math.floor(s/128),alt=loop%2===1,breath=loop%5===4&&s%128>=112,ph=loop%8,tr=ph>=6?-2:0;/* круг 17: 7–8-я петли на тон ниже — меньше усталости */ // вариации по петлям и «дыхание» в конце каждой 5-й петли
+  const bc=T.bass[i16];if(bc!=='-'&&!(part===2&&i16%8)){const bf=mtof(T.root-12+tr+(bc==='o'?ch[0]+7:bc==='8'?ch[0]+12:ch[0])),bd=spb*(bc==='x'?1.6:1.1);/* круг 17: бас октавой выше — ниже 100 Гц динамик iPhone почти не звучит */
    if(T.bw==='sawtooth'||T.bw==='square')blip(bf,bd,.16*tv,w,dst,T.bw);else tone(bf,bd,T.bw,(T.bw==='sine'?.22:.2)*tv,0,w,dst);
-   if(si>.75&&!eco&&bc==='x')tone(bf*2,spb,'square',.025*tv,0,w,dst)}
-  if(T.pad&&s%8===0&&!eco)for(const k of ch)mnote(mtof(T.root+k+padLow),spb*8.2,T.pad,(part===2?.035:.022)*tv,w,dst,spb*2,7);
-  if(T.perc&&part!==2&&!eco&&!breath){const pc=T.perc[i16];if(pc==='k')tone(120,.12,'sine',.22*tv,-75,w,dst);else if(pc==='h')noise(.04,.05*tv,8000,'highpass',w,dst);else if(pc==='s')noise(.1,.08*tv,1800,'bandpass',w,dst);else if(pc==='w')tone(1600,.03,'sine',.05*tv,0,w,dst);
+   tone(bf*2,spb*.45,'triangle',.04*tv,0,w,dst);if(si>.75&&!eco&&bc==='x')tone(bf*3,spb,'square',.02*tv,0,w,dst)}
+  if(T.pad&&s%8===0&&!eco)for(const k of ch)mnote(mtof(T.root+k+padLow+tr),spb*8.2,T.pad,(part===2?.035:.022)*tv,w,dst,spb*2,7);
+  if(T.perc&&!breath){const pc=T.perc[i16];if(pc==='k'){if(part!==2||i16%8===0)tone(120,.12,'sine',.22*tv,-75,w,dst)}else if(part===2||eco){}else if(pc==='h')noise(.04,.05*tv,8000,'highpass',w,dst);else if(pc==='s')noise(.1,.08*tv,1800,'bandpass',w,dst);else if(pc==='w')tone(1600,.03,'sine',.05*tv,0,w,dst);
    else if(si>.55&&i16%2===1)noise(.03,.028*tv,9000,'highpass',w,dst)}
   let ad=part===2?T.arp*(alt?.55:.15):T.arp;if(si<.3&&mode==='play')ad*=.6;if(breath)ad=0;
-  if(hash(s+T.seed*97,bar)<ad){const nn=T.root+12+ch[s%3]+(hash(s,3)<.2?12:0);tone(mtof(nn),spb*.9,T.lw,(T.lw==='square'?.03:.045)*tv,0,w,dst);if(T.bell&&!eco)tone(mtof(nn+12),spb*2,'sine',.015*tv,0,w,dst)}
-  if((part===1||part===3)&&!eco&&T.mot&&!breath){const mi=s%8,v=T.mot[mi];if(v!==null){let n=T.root+12+snap(T,v+(Math.abs(ch[0])<=5?ch[0]:0));
-    if(part===3&&alt&&mi===4)n+=12; // вариация на повторе
+  if(hash(s+T.seed*97+tr*13,bar)<ad){const nn=T.root+12+ch[s%3]+(hash(s,3)<.2?12:0)+tr;tone(mtof(nn),spb*.9,T.lw,(T.lw==='square'?.03:.045)*tv,0,w,dst);if(T.bell&&!eco)tone(mtof(nn+12),spb*2,'sine',.015*tv,0,w,dst)}
+  if((part===1||part===3)&&!eco&&T.mot&&!breath){const mi=s%8,v=T.mot[mi];if(v!==null){let n=T.root+12+snap(T,v+(Math.abs(ch[0])<=5?ch[0]:0))+tr;
+    if(part===3&&alt&&mi===4)n+=12;if(ph===7&&mi%2)n+=12; /* вариация на повторе; 8-я петля — мелодия отвечает октавой выше */
     lead(T,n,spb*1.5,(T.lw==='square'?.035:.055)*tv,w,dst);if(hash(s,7)<.1)tone(mtof(n-12),spb*1.2,T.lw,.018*tv,0,w+spb*.5,dst)}}
   MU.step++;MU.next+=spb}}
 // Вибрация: Android — Vibration API; iOS 18+ Safari — системный тактильный отклик переключателя
@@ -558,7 +565,7 @@ function warnLine(x,y,dx,dy,len,w,T){tutDash();warns.push({kind:'l',x,y,dx,dy,le
 
 /* ---------- БОЙ ---------- */
 function hitEnemy(e,base,fx,fy){if(e.dead)return;let d=base*rand(.9,1.1)*(S.buff.dmg>0?1.5:1);const crit=Math.random()<ST.crit;if(crit){d*=2;FX.flash=Math.max(FX.flash,.06)}
- if(e.shield>0){const s=Math.min(e.shield,d);e.shield-=s;d-=s;floatTxt(e.x,e.y-e.r,'щит','#9fd8ff',11);if(d<=0){e.flash=.08;sfx('hit');return}}
+ if(e.shield>0){const s=Math.min(e.shield,d);e.shield-=s;d-=s;floatTxt(e.x,e.y-e.r,'щит','#9fd8ff',11);if(d<=0){e.flash=.08;sfx('shield',e.x);return}}
  e.hp-=d;e.flash=.09;if(crit||time-(e.fxT||-9)>.3){e.fxT=time;vfx(0,e.x+rand(-6,6),e.y-e.r*.3+rand(-6,6),crit?44:28,.16)}if(e.type!=='boss'&&e.type!=='guard'){const n=norm(e.x-fx,e.y-fy);e.kx+=n.x*180;e.ky+=n.y*180}
  // обычные попадания по одному врагу копятся в одну цифру (меньше шума при АВТО); крит — отдельный крупный всплеск
  if(crit)floatTxt(e.x,e.y-e.r-10,fmt(d)+'!','#ffd166',19);else{if(time-(e.dl||-9)>.5){e.dacc=0;e.dn=0}e.dacc+=d;e.dn++;e.dl=time;const f=e.fl;if(f&&f.life>.05){f.txt=fmt(e.dacc);f.life=.9;f.x=e.x;f.y=e.y-e.r-4;f.size=Math.min(18,13+Math.log2(e.dn));f.pop=.12}else e.fl=floatTxt(e.x,e.y-e.r-4,fmt(e.dacc),'#fff',Math.min(18,13+Math.log2(e.dn)))}sfx(crit?'crit':'hit',e.x);
@@ -577,7 +584,7 @@ function killEnemy(e){if(e.dead)return;e.dead=true;vfx(e.type==='boss'?2:1,e.x,e
  if(S.tut===0){S.tut=1;hint('Монеты попадают в рюкзак. Собери побольше!')}}
 // cap: обычный удар ≤20% HP, удар босса ≤18%, одна пуля ≤6%; в бою с боссом неуязвимость после удара дольше
 function hurtPlayer(d,boss,bullet){if(P.inv>0||P.dead||mode!=='play')return;const cap=ST.hp*(bullet?.06:boss?.18:.2);d=Math.min(d,cap);
- P.hp-=d;P.inv=BF.active?.5:.35;P.hurtT=.25;P.calmT=3;cam.shake=Math.min(12,cam.shake+5);sfx('hurt');vib(25);questEv('hurt');floatTxt(P.x,P.y-24,'-'+fmt(d),'#ff6b6b',14,true);
+ P.hp-=d;P.inv=BF.active?.5:.35;P.hurtT=.25;P.calmT=3;cam.shake=Math.min(12,cam.shake+5);sfx('hurt');if(P.hp>0&&P.hp<ST.hp*.25)sfx('lowhp');vib(25);questEv('hurt');floatTxt(P.x,P.y-24,'-'+fmt(d),'#ff6b6b',14,true);
  if(P.hp<=0)die()}
 function gainXp(v){S.xp+=v*ST.xp*(S.buff.xp>0?2:1);let up=false;while(S.xp>=xpNeed(S.lvl)){S.xp-=xpNeed(S.lvl);S.lvl++;up=true;
   for(const k in WEAP)if(WEAP[k].lvl===S.lvl)toast('Новое оружие: '+WEAP[k].name+'! Экипируй в «Прокачке»',3500);
@@ -781,7 +788,7 @@ function questEv(k,v){const q=S.quest;
   else if(k==='kill'){if(q.k==='kill'&&v>=q.ring)hit=1;else if(q.k==='fast'||q.k==='nohit')hit=1}
   else if(q.k===k)hit=k==='deposit'?v:1;
   if(hit){q.have+=hit;if(q.have>=q.need){
-   if(q.chain&&q.ci<q.chain.length-1){q.ci++;const nx=q.chain[q.ci];Object.assign(q,{k:nx.k,need:nx.need,txt:nx.txt,ring:nx.ring,T:nx.T,have:0,left:nx.T||null});toast('Шаг '+q.ci+'/'+q.chain.length+' выполнен!');sfx('coin');save()}
+   if(q.chain&&q.ci<q.chain.length-1){q.ci++;const nx=q.chain[q.ci];Object.assign(q,{k:nx.k,need:nx.need,txt:nx.txt,ring:nx.ring,T:nx.T,have:0,left:nx.T||null});toast('Шаг '+q.ci+'/'+q.chain.length+' выполнен!');sfx('step');save()}
    else{giveReward(q.reward,'Задание выполнено!');S.qn++;newQuest()}}}}
  const d=S.daily;if(d&&!d.done&&k!=='hurt'){let hit=0;if(d.k===k)hit=k==='deposit'?v:1;if(hit){d.have+=hit;if(d.have>=d.need){d.done=true;giveReward(d.reward,'Ежедневное задание выполнено!')}}}}
 const today=()=>{const d=new Date();return d.getFullYear()+'-'+(d.getMonth()+1)+'-'+d.getDate()};
@@ -1061,7 +1068,7 @@ function closeUp(){if(renderUp.seen){renderUp.seen=false;S.slot2New=false;save()
 function buyCount(u){let lv=S.up[u.k],bank=S.bank,n=0,cost=0;const lim=buyN==='max'?9999:+buyN;while(n<lim&&lv<u.max){const c=upCost(u,lv);if(bank<c)break;bank-=c;cost+=c;lv++;n++}return{n,cost}}
 function effTxt(k,lv){const t=S.tal,lm=1+BAL.lvlB*(S.lvl-1);
  switch(k){case'atk':return fmt(10*Math.pow(1.13,lv)*lm*(1+.1*t.might));case'hp':return fmt(100*Math.pow(1.13,lv)*lm*(1+.1*t.vital));case'aspd':return'+'+lv*4+'%';case'spd':return'+'+lv*3+'%';case'bag':return(20+5*lv)+' шт.';case'regen':return(Math.min(3,lv*.12)).toFixed(1)+'%/с вне боя';case'crit':return lv*2+'%';case'mag':return(55+12*lv)+''}}
-function renderUp(){if(upTab==='wp'&&S.slot2New)renderUp.seen=true;$('#upBank').textContent=fmt(S.bank);$('#upSparks').textContent=S.sparks;const acc=accessible();
+function renderUp(){try{updHud()}catch(e){}/* круг 19: монеты в HUD за модалкой совпадают с балансом в «Прокачке» */if(upTab==='wp'&&S.slot2New)renderUp.seen=true;$('#upBank').textContent=fmt(S.bank);$('#upSparks').textContent=S.sparks;const acc=accessible();
  $('#powLine').innerHTML='Твоя сила: <b>'+fmt(power())+'</b> · зона '+acc+': '+fmt(recPower(tier(S.ch,acc)))+(acc>=4?' · босс: '+fmt(bossRec(S.ch)):'');
  document.querySelectorAll('#tabs button').forEach(b=>{b.classList.toggle('on',b.dataset.tab===upTab);b.classList.toggle('dot',b.dataset.tab==='wp'&&S.slot2New)});$('#amt').classList.toggle('hidden',upTab!=='up');
  document.querySelectorAll('#amt button').forEach(b=>b.classList.toggle('on',b.dataset.n===buyN));
@@ -1209,7 +1216,7 @@ $('#bPlay').textContent=S.started?'Продолжить · ур. '+S.lvl:'Игр
 // демо-враги на фоне меню
 spawnDemo();
 requestAnimationFrame(frame);
-if('serviceWorker' in navigator&&location.protocol.startsWith('http'))window.addEventListener('load',()=>navigator.serviceWorker.register('sw.js').catch(()=>{}));
+if('serviceWorker' in navigator&&location.protocol.startsWith('http'))window.addEventListener('load',()=>{navigator.serviceWorker.register('sw.js').catch(()=>{});navigator.serviceWorker.ready.then(r=>{if(r.active)r.active.postMessage('fill')}).catch(()=>{})});/* круг 18: докачать то, что не успела установка */
 window.__G={AU,MU,TH,musicTick,joy,TILES,PERF,autoQuality,openSlotPick,checkStreak,die:()=>die(),FX,heroDps,weaponDps,WEAP,newQuest,questEv,checkDaily,openBossConfirm,get needFrame(){return needFrame},BAL,UPG,upCost,recPower,bossRec,tier,power,accessible,get S(){return S},get ST(){return ST},P,BF,get enemies(){return enemies},startBoss,update,recalc,openUp,closeUp,showResult,switchChapter,get mode(){return mode},set mode(v){mode=v},render};
 </script>
 </body>
